@@ -1,0 +1,17 @@
+configs:
+  nginx_conf:
+    file: "nginx.conf"
+
+services:
+  nginx:
+    image: nginx:1.27
+    restart: always
+    ports:
+      - "80:80"
+    configs:
+      - source: nginx_conf
+        target: /etc/nginx/nginx.conf
+
+  backend:
+    build: .
+    restart: always
