@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Lunch Cost Splitter</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 30px; }
+    h2, h3 { margin-bottom: 10px; }
+    table { border-collapse: collapse; margin-top: 10px; margin-bottom: 10px; width: 80%; }
+    th, td { border: 1px solid #aaa; padding: 8px; text-align: center; }
+    th { background: #eee; }
+    input, select { padding: 4px; }
+    .section { margin-bottom: 25px; padding: 10px; border: 1px solid #ddd; border-radius: 6px; }
+    .button { padding: 6px 12px; margin: 5px; cursor: pointer; }
+    .orders-table { margin-left: 20px; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <h2>Lunch Cost Splitter</h2>
+
+  <!-- Items Section -->
+  <div class="section">
+    <h3>Items</h3>
+    <table id="items">
+      <thead>
+        <tr>
+          <th>Item Name</th>
+          <th>Count</th>
+          <th>Total Cost</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <button type="button" class="button" onclick="addItem()">+ Add Item</button>
+  </div>
+
+  <!-- Orders Section -->
+  <div class="section">
+    <h3>Orders</h3>
+    <div id="orders"></div>
+    <button type="button" class="button" onclick="addPerson()">+ Add Person</button>
+  </div>
+
+  <!-- Totals -->
+  <div class="section">
+    <label>Target Total Cost: </label>
+    <input type="number" id="target_total" value="250"><br>
+    <label>Total Discount: </label>
+    <input type="number" id="discount" value="0"><br>
+  </div>
+
+  <button class="button" onclick="calculate()">Calculate</button>
+
+  <div id="results"></div>
+
+
+  <script>
+    // --- ITEM INPUT (as table row) ---
+    function addItem(name="", qty=1, total=0) {
+      const tbody = document.querySelector("#items tbody");
+      const row = document.createElement("tr");
+      row.innerHTML = `
+        <td><input type="text" placeholder="Item name" value="${name}"></td>
+        <td><input type="number" placeholder="Quantity" value="${qty}"></td>
+        <td><input type="number" placeholder="Total Cost" value="${total}"></td>
+        <td><button onclick="this.parentNode.parentNode.remove()">❌</button></td>
+      `;
+      tbody.appendChild(row);
+    }
+
+    // --- PERSON INPUT ---
+    function addPerson(name="") {
+      const container = document.getElementById("orders");
+      const div = document.createElement("div");
+      div.className = "section";
+      div.innerHTML = `
+        <b>Person:</b> <input type="text" placeholder="Person name" value="${name}">
+        <button type="button" onclick="addOrderRow(this)">+ Add Item</button>
+        <table class="orders-table">
+          <thead><tr><th>Item</th><th>Count</th><th>Action</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <button onclick="this.parentNode.remove()">❌ Remove Person</button>
+      `;
+      container.appendChild(div);
+    }
+
+    // --- ORDER ROWS PER PERSON ---
+    function addOrderRow(button) {
+      const items = Array.from(document.querySelectorAll("#items tbody tr input:first-child[type=text]"))
+                         .map(input => input.value).filter(v => v);
+      const selectOptions = items.map(i => `<option value="${i}">${i}</option>`).join("");
+      const row = document.createElement("tr");
+      row.innerHTML = `
+        <td><select>${selectOptions}</select></td>
+        <td><input type="number" value="1" step="0.1"></td>
+        <td><button onclick="this.parentNode.parentNode.remove()">❌</button></td>
+      `;
+      button.parentNode.querySelector("tbody").appendChild(row);
+    }
+
+    // --- CALCULATION ---
+    function calculate() {
+      // Items
+      const items = {};
+      document.querySelectorAll("#items tbody tr").forEach(tr => {
+        const [name, qty, total] = tr.querySelectorAll("input");
+        if (name.value) items[name.value] = [parseFloat(qty.value), parseFloat(total.value)];
+      });
+
+      // Orders
+      const orders = {};
+      document.querySelectorAll("#orders .section").forEach(div => {
+        const person = div.querySelector("input[type=text]").value;
+        if (person) {
+          const orderDict = {};
+          div.querySelectorAll("tbody tr").forEach(tr => {
+            const item = tr.querySelector("select").value;
+            const qty = parseFloat(tr.querySelector("input").value);
+            orderDict[item] = qty;
+          });
+          orders[person] = orderDict;
+        }
+      });
+
+      const targetTotal = parseFloat(document.getElementById("target_total").value);
+      const discount = parseFloat(document.getElementById("discount").value);
+
+      const result = calculateCostSplit(items, orders, targetTotal, discount);
+      showResults(result);
+    }
+
+    function calculateCostSplit(items, orders, target_total_cost, total_discount) {
+      const unit_prices = {};
+      for (let item in items) {
+        const [qty, total] = items[item];
+        unit_prices[item] = total / qty;
+      }
+
+      const costs = {};
+      for (let person in orders) {
+        let cost = 0;
+        for (let item in orders[person]) {
+          cost += orders[person][item] * unit_prices[item];
+        }
+        costs[person] = Math.round(cost * 100) / 100;
+      }
+
+      const original_total = Object.values(costs).reduce((a,b)=>a+b,0);
+      const num_persons = Object.keys(orders).length;
+      const adjustment = num_persons > 0 ? (target_total_cost - original_total) / num_persons : 0;
+
+      const adjusted_costs = {};
+      for (let person in costs) {
+        adjusted_costs[person] = Math.round((costs[person] + adjustment) * 100) / 100;
+      }
+
+      const total_cost = Object.values(adjusted_costs).reduce((a,b)=>a+b,0);
+      const discounts = {};
+      for (let person in adjusted_costs) {
+        discounts[person] = total_cost > 0 ? Math.round((adjusted_costs[person] / total_cost * total_discount) * 100) / 100 : 0;
+      }
+
+      const final_amounts = {};
+      for (let person in adjusted_costs) {
+        final_amounts[person] = Math.round((adjusted_costs[person] - discounts[person]) * 100) / 100;
+      }
+
+      const target_final_total = target_total_cost - total_discount;
+      let rounded_amounts = {};
+      for (let person in final_amounts) {
+        rounded_amounts[person] = Math.round(final_amounts[person]);
+      }
+
+      let current_sum = Object.values(rounded_amounts).reduce((a,b)=>a+b,0);
+      let difference = current_sum - target_final_total;
+
+      if (difference !== 0) {
+        const sorted_people = Object.entries(rounded_amounts)
+          .sort((a,b) => final_amounts[b[0]] - final_amounts[a[0]]);
+        let i = 0;
+        while (difference !== 0 && i < sorted_people.length) {
+          let person = sorted_people[i][0];
+          if (difference > 0) { rounded_amounts[person]--; difference--; }
+          else { rounded_amounts[person]++; difference++; }
+          i = (i + 1) % sorted_people.length;
+        }
+      }
+
+      return {
+        total_before_discount: total_cost,
+        total_after_discount: Object.values(rounded_amounts).reduce((a,b)=>a+b,0),
+        final_amounts: rounded_amounts
+      };
+    }
+
+    function showResults(result) {
+      let html = `
+        <h3>Results</h3>
+        <p>Total before discount: ${result.total_before_discount.toFixed(2)}</p>
+        <p>Total after discount: ${result.total_after_discount}</p>
+        <table>
+          <tr><th>Person</th><th>Final Amount</th></tr>
+      `;
+      for (let person in result.final_amounts) {
+        html += `<tr><td>${person}</td><td>${result.final_amounts[person]}</td></tr>`;
+      }
+      html += `<tr><td><b>Total</b></td><td><b>${result.total_after_discount}</b></td></tr></table>`;
+      document.getElementById("results").innerHTML = html;
+    }
+
+    // Default items
+    addItem("Koobide",1,100);
+    addItem("Jooje",1,150);
+
+    // Default people
+    addPerson("Ali Rn");
+    addPerson("Ehsan");
+  </script>
+</body>
+</html>
